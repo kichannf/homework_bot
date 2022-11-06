@@ -90,6 +90,7 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверка ответа API на корректность."""
     """Если ответ API соответствует ожиданиям, возвращает список ДР."""
+    homeworks = response['homeworks']
     if not isinstance(response, dict):
         raise NotDict('Объект не является словарем')
     if 'homeworks' not in response:
