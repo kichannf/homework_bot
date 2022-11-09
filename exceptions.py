@@ -1,34 +1,40 @@
-class UnauthorizedError(Exception):
+class UniqueException(Exception):
+    """Родительский класс пользовательских."""
+
+    pass
+
+
+class UnauthorizedError(UniqueException):
     """Ошибка выдачи API."""
 
     pass
 
 
-class InternalServerError(Exception):
+class InternalServerError(UniqueException):
     """Ошибка выдачи API."""
 
     pass
 
 
-class NotDict(Exception):
+class NotDict(UniqueException):
     """Объект не является словарем."""
 
     pass
 
 
-class FoundNot(Exception):
+class FoundNot(UniqueException):
     """Сервер не может найти запрашиваемый ресурс."""
 
     pass
 
 
-class NotList(Exception):
+class NotList(UniqueException):
     """Объект не является списком."""
 
     pass
 
 
-class RequestTimeout(Exception):
+class RequestTimeout(UniqueException):
     """Сервер хотел бы отключить это неиспользуемое соединение."""
 
     pass

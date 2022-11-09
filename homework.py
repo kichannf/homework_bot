@@ -4,13 +4,14 @@ import requests
 import sys
 import time
 from http import HTTPStatus
+from json import JSONDecodeError
 
 import telegram
 from telegram import Bot
 
 from exceptions import (
-    UnauthorizedError, InternalServerError, NotDict,
-    FoundNot, NotList, RequestTimeout
+    UniqueException, UnauthorizedError, InternalServerError,
+    NotDict, FoundNot, NotList, RequestTimeout
 )
 
 from dotenv import load_dotenv
@@ -45,27 +46,14 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-# Последний отправленный статус
-MESSAGE_STATUS = ''
-
 
 def send_message(bot, message):
     """Отправка сообщения о статусе проверки ДР."""
-    global MESSAGE_STATUS
-    if MESSAGE_STATUS != message:
-        try:
-            bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text=message
-            )
-            logger.info(f'Сообщение "{message}" успешно отправлено.')
-            MESSAGE_STATUS = message
-        except telegram.error.BadRequest:
-            logger.error('Ошибка обработки запроса. Проверь ID клиента')
-        except telegram.error.Unauthorized:
-            logger.error('Ошибка телеграмм токена')
-    else:
-        logger.debug('Статус проверки ДР не поменялся')
+    bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=message
+    )
+    logger.info(f'Сообщение "{message}" успешно отправлено.')
 
 
 def get_api_answer(current_timestamp):
@@ -73,8 +61,9 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    logger.debug('Обращение к API')
     if response.status_code == HTTPStatus.UNAUTHORIZED:
-        raise UnauthorizedError('Ошибка авторизации. Ошибка в токене')
+        raise UnauthorizedError('Ошибка авторизации. Ошибка в токене API')
     if response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
         raise InternalServerError('Внутренняя ошибка сервера')
     if response.status_code == HTTPStatus.NOT_FOUND:
@@ -83,13 +72,21 @@ def get_api_answer(current_timestamp):
         raise RequestTimeout(
             'Сервер хотел бы отключить это неиспользуемое соединение'
         )
-    homeworks = response.json()
-    return homeworks
+    try:
+        return response.json()
+    except JSONDecodeError as error:
+        logger.exception(error)
+        raise error
 
 
 def check_response(response):
     """Проверка ответа API на корректность."""
     """Если ответ API соответствует ожиданиям, возвращает список ДР."""
+    # Переменную homeworks ввел из-за пайтестов.
+    # Мы получаем в ответ от АПИ словарь, но тесты написаны так,
+    # что response оборачивается в список и тест падает.
+    # Или я что-то не понимаю?)
+    # Сам тест - "TestHomework.test_check_response_not_dict"
     homeworks = response['homeworks']
     if not isinstance(response, dict):
         raise NotDict('Объект не является словарем')
@@ -113,10 +110,7 @@ def parse_status(homework):
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     """которые необходимы для работы программы."""
-    environment_variables = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
-    if not all(environment_variables):
-        return False
-    return True
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def main():
@@ -125,39 +119,48 @@ def main():
         logger.critical('Потеряли переменную окружения')
         sys.exit()
     bot = Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time()) - 600
+    current_timestamp = int(time.time()) - 60 * 60 * 24 * 14
+    last_status = 'last_status'
+    homework_status = ''
+    telegram_mistake = [
+        'Ошибка обработки запроса. Проверь ID клиента',
+        'Ошибка телеграмм токена'
+    ]
 
     while True:
         try:
             response = get_api_answer(current_timestamp)
             homework = check_response(response)
-            message_result = parse_status(homework[0])
-            send_message(bot, message_result)
+            homework_status = parse_status(homework[0])
+            if homework_status != last_status:
+                send_message(bot, homework_status)
+                last_status = homework_status
 
-        except UnauthorizedError:
-            send_message(
-                bot, 'Ошибка авторизации. Ошибка в токене'
-            )
-            logger.error('Ошибка авторизации. Ошибка в токене.')
-        except InternalServerError:
-            send_message(bot, 'Внутренняя ошибка сервера.')
-            logger.error('Внутренняя ошибка сервера')
-        except FoundNot:
-            send_message(
-                bot, 'Сервер не может найти запрашиваемый ресурс'
-            )
-            logger.error('Сервер не может найти запрашиваемый ресурс')
-        except NotDict:
-            send_message(bot, 'Объект не является словарем')
-            logger.error('Ошибка получения статуса Домашней Работы')
-        except NotList:
-            send_message(bot, 'Объект не является списком')
-            logger.error('Ошибка получения статуса Домашней Работы')
+        except UniqueException as error:
+            homework_status = str(error)
+            logger.error(homework_status)
+
         except LookupError:
-            logger.error('Ошибка получения ДР')
-            send_message(bot, 'Ошибка получения ДР.')
+            homework_status = 'Ошибка получения ДР'
+            logger.error(homework_status, exc_info=True)
+
+        except telegram.error.BadRequest:
+            homework_status = 'Ошибка обработки запроса. Проверь ID клиента'
+            logger.error(homework_status)
+            time.sleep(RETRY_TIME)
+
+        except telegram.error.Unauthorized:
+            homework_status = 'Ошибка телеграмм токена'
+            logger.error(homework_status)
+            time.sleep(RETRY_TIME)
 
         finally:
+            if homework_status != last_status:
+                last_status = homework_status
+                if homework_status not in telegram_mistake:
+                    send_message(bot, homework_status)
+            else:
+                logger.debug('Отсутствие в ответе новых статусов')
             time.sleep(RETRY_TIME)
 
 
