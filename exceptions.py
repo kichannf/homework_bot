@@ -16,12 +16,6 @@ class InternalServerError(UniqueException):
     pass
 
 
-class NotDict(UniqueException):
-    """Объект не является словарем."""
-
-    pass
-
-
 class FoundNot(UniqueException):
     """Сервер не может найти запрашиваемый ресурс."""
 

@@ -11,7 +11,7 @@ from telegram import Bot
 
 from exceptions import (
     UniqueException, UnauthorizedError, InternalServerError,
-    NotDict, FoundNot, NotList, RequestTimeout
+    FoundNot, NotList, RequestTimeout
 )
 
 from dotenv import load_dotenv
@@ -82,17 +82,9 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверка ответа API на корректность."""
     """Если ответ API соответствует ожиданиям, возвращает список ДР."""
-    # Переменную homeworks ввел из-за пайтестов.
-    # Мы получаем в ответ от АПИ словарь, но тесты написаны так,
-    # что response оборачивается в список и тест падает.
-    # Или я что-то не понимаю?)
-    # Сам тест - "TestHomework.test_check_response_not_dict"
     homeworks = response['homeworks']
-    if not isinstance(response, dict):
-        raise NotDict('Объект не является словарем')
     if 'homeworks' not in response:
         raise LookupError('Ошибка доступа по ключу "homeworks"')
-    homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise NotList('Объект не является списком')
     return homeworks
@@ -110,22 +102,18 @@ def parse_status(homework):
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     """которые необходимы для работы программы."""
-    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
     """Основная логика работы бота."""
-    if check_tokens() is False:
+    if not check_tokens():
         logger.critical('Потеряли переменную окружения')
         sys.exit()
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time()) - 60 * 60 * 24 * 14
     last_status = 'last_status'
     homework_status = ''
-    telegram_mistake = [
-        'Ошибка обработки запроса. Проверь ID клиента',
-        'Ошибка телеграмм токена'
-    ]
 
     while True:
         try:
@@ -135,6 +123,8 @@ def main():
             if homework_status != last_status:
                 send_message(bot, homework_status)
                 last_status = homework_status
+            else:
+                logger.debug('Отсутствие в ответе новых статусов')
 
         except UniqueException as error:
             homework_status = str(error)
@@ -155,12 +145,6 @@ def main():
             time.sleep(RETRY_TIME)
 
         finally:
-            if homework_status != last_status:
-                last_status = homework_status
-                if homework_status not in telegram_mistake:
-                    send_message(bot, homework_status)
-            else:
-                logger.debug('Отсутствие в ответе новых статусов')
             time.sleep(RETRY_TIME)
 
 
