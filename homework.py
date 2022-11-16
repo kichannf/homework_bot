@@ -82,9 +82,11 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверка ответа API на корректность."""
     """Если ответ API соответствует ожиданиям, возвращает список ДР."""
-    homeworks = response['homeworks']
+    if not isinstance(response, dict):
+        raise TypeError('Не является словарем')
     if 'homeworks' not in response:
-        raise LookupError('Ошибка доступа по ключу "homeworks"')
+        raise KeyError('Ошибка доступа по ключу "homeworks"')
+    homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise NotList('Объект не является списком')
     return homeworks
@@ -130,9 +132,13 @@ def main():
             homework_status = str(error)
             logger.error(homework_status)
 
-        except LookupError:
+        except KeyError:
             homework_status = 'Ошибка получения ДР'
-            logger.error(homework_status, exc_info=True)
+            logger.error(homework_status)
+
+        except TypeError:
+            homework_status = 'Ошибка получения ДР'
+            logger.error(homework_status)
 
         except telegram.error.BadRequest:
             homework_status = 'Ошибка обработки запроса. Проверь ID клиента'
